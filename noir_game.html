@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Killer vs Detective PRO</title>
+    <style>
+        :root {
+            --bg-color: #121212; --panel-bg: #1e1e1e; --text-color: #e0e0e0;
+            --card-bg: #2a2a2a; --accent-red: #ff5252; --accent-blue: #448aff;
+            --highlight: #ffd700; --card-size: 80px;
+            --accent-green: #4caf50;
+        }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg-color); color: var(--text-color); margin: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        header { text-align: center; padding: 10px; background: #000; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; padding: 10px 20px; }
+        
+        .role-selector { display: flex; gap: 10px; }
+        .role-btn { padding: 5px 15px; border: 1px solid #444; background: #222; color: #fff; cursor: pointer; border-radius: 4px; }
+        .role-btn.active { border-color: var(--highlight); background: #333; }
+
+        .main-layout { display: flex; flex: 1; padding: 20px; gap: 30px; justify-content: center; align-items: flex-start; }
+        .field-section { background: var(--panel-bg); padding: 20px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        .game-grid-container { display: grid; grid-template-columns: 40px auto 40px; grid-template-rows: 40px auto 40px; gap: 10px; }
+        .board { grid-column: 2; grid-row: 2; display: grid; grid-template-columns: repeat(5, var(--card-size)); grid-template-rows: repeat(5, var(--card-size)); gap: 10px; }
+        
+        /* КАРТОЧКИ И КРЕСТ */
+        .card { background-color: var(--card-bg); border: 1px solid #444; border-radius: 6px; display: flex; justify-content: center; align-items: center; text-align: center; font-size: 0.85rem; cursor: pointer; position: relative; transition: all 0.2s; padding: 5px; word-break: break-word; overflow: hidden; }
+        .status-dead { color: #777; border-color: rgba(255, 82, 82, 0.4) !important; }
+        .status-dead::after { 
+            content: "✕"; 
+            position: absolute; 
+            font-size: 4rem; 
+            color: var(--accent-red); 
+            opacity: 0.4; 
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .status-innocent { border: 2px solid var(--accent-blue) !important; }
+        .card.target-valid { border: 1px dashed var(--highlight); background-color: #353525; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+        
+        .side-panel { width: 350px; display: flex; flex-direction: column; gap: 20px; height: 100%; }
+        .info-block { background: var(--panel-bg); padding: 15px; border-radius: 10px; border-left: 4px solid var(--accent-blue); }
+        .hand-container { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+        .hand-card { padding: 8px; background: #333; border: 1px solid #444; border-radius: 4px; font-size: 0.8rem; text-align: center; cursor: pointer; }
+        .action-btn { width: 100%; padding: 12px; margin: 5px 0; border: none; border-radius: 6px; background: #444; color: white; font-weight: bold; cursor: pointer; }
+        .action-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+        .action-btn.kill { background: var(--accent-red); }
+        .log-area { flex: 1; background: #000; padding: 10px; border-radius: 6px; font-family: monospace; font-size: 0.8rem; overflow-y: auto; color: #888; max-height: 200px; border: 1px solid #222; }
+        .shift-btn { background: #252525; border: 1px solid #333; color: #666; cursor: pointer; border-radius: 4px; }
+
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 1000; justify-content: center; align-items: center; }
+        .modal-content { background: #222; padding: 30px; border-radius: 15px; text-align: center; border: 1px solid #444; max-width: 400px; }
+        .victim-list { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 5px; }
+        .victim-tag { font-size: 0.75rem; padding: 4px 8px; background: #442222; border-radius: 4px; color: var(--accent-red); border: 1px solid transparent; }
+        .victim-active { background: var(--accent-red); color: white; font-weight: bold; border-color: var(--highlight); }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>Killer vs Detective</h1>
+        <div class="role-selector">
+            <span>Вы за: </span>
+            <button id="btn-role-killer" class="role-btn" onclick="ui.setLocalRole('killer')">Убийцу</button>
+            <button id="btn-role-detective" class="role-btn" onclick="ui.setLocalRole('detective')">Сыщика</button>
+        </div>
+    </header>
+
+    <div class="main-layout">
+        <section class="field-section">
+            <div class="game-grid-container">
+                <div style="grid-column: 2; grid-row: 1; display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px;">
+                    <button class="shift-btn shift-ctrl" onclick="window.game.shiftCol(0, -1)">▲</button>
+                    <button class="shift-btn shift-ctrl" onclick="window.game.shiftCol(1, -1)">▲</button>
+                    <button class="shift-btn shift-ctrl" onclick="window.game.shiftCol(2, -1)">▲</button>
+                    <button class="shift-btn shift-ctrl" onclick="window.game.shiftCol(3, -1)">▲</button>
+                    <button class="shift-btn shift-ctrl" onclick="window.game.shiftCol(4, -1)">▲</button>
+                </div>
+                <div style="grid-column: 1; grid-row: 2; display: grid; grid-template-rows: repeat(5, 1fr); gap: 10px;">
+                    <button class="shift-btn shift-ctrl" onclick="window.game.shiftRow(0, -1)">◀</button>
+                    <button class="shift-btn shift-ctrl" onclick="window.game.shiftRow(1, -1)">◀</button>
+                    <button class="shift-btn shift-ctrl" onclick="window.game.shiftRow(2, -1)">◀</button>
+                    <button class="shift-btn shift-ctrl" onclick="window.game.shiftRow(3, -1)">◀</button>
+                    <button class="shift-btn shift-ctrl" onclick="window.game.shiftRow(4, -1)">◀</button>
+                </div>
+                <div id="board" class="board"></div>
+                <div style="grid-column: 3; grid-row: 2; display: grid; grid-template-rows: repeat(5, 1fr); gap: 10px;">
+                    <button class="shift-btn shift-ctrl" onclick="window.game.shiftRow(0, 1)">▶</button>
+                    <button class="shift-btn shift-ctrl" onclick="window.game.shiftRow(1, 1)">▶</button>
+                    <button class="shift-btn shift-ctrl" onclick="window.game.shiftRow(2, 1)">▶</button>
+                    <button class="shift-btn shift-ctrl" onclick="window.game.shiftRow(3, 1)">▶</button>
+                    <button class="shift-btn shift-ctrl" onclick="window.game.shiftRow(4, 1)">▶</button>
+                </div>
+                <div style="grid-column: 2; grid-row: 3; display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px;">
+                    <button class="shift-btn shift-ctrl" onclick="window.game.shiftCol(0, 1)">▼</button>
+                    <button class="shift-btn shift-ctrl" onclick="window.game.shiftCol(1, 1)">▼</button>
+                    <button class="shift-btn shift-ctrl" onclick="window.game.shiftCol(2, 1)">▼</button>
+                    <button class="shift-btn shift-ctrl" onclick="window.game.shiftCol(3, 1)">▼</button>
+                    <button class="shift-btn shift-ctrl" onclick="window.game.shiftCol(4, 1)">▼</button>
+                </div>
+            </div>
+            <button class="action-btn" onclick="window.game.resetGame()" style="margin-top:20px; background:#333;">НОВАЯ ИГРА</button>
+        </section>
+
+        <section class="side-panel">
+            <div class="info-block">
+                <div id="turn-indicator" style="font-weight:bold; font-size:1.2rem; margin-bottom:10px;">ХОД: ...</div>
+                <div id="identity-area">
+                    <div style="color:#888; font-size:0.9rem;">Ваша роль: <span id="player-identity" style="color: var(--highlight); font-weight:bold;">?</span></div>
+                </div>
+                <div id="victim-area" style="margin-top: 15px; border-top: 1px solid #333; padding-top: 10px;">
+                    <div style="color:#888; font-size:0.9rem;">Список жертв (текущая — первая):</div>
+                    <div id="victim-list" class="victim-list"></div>
+                </div>
+                <div id="detective-hand-ui" style="display:none; margin-top: 15px;">
+                    <div style="color:#888; font-size:0.9rem;">Ваша рука:</div>
+                    <div id="hand-cards" class="hand-container"></div>
+                </div>
+            </div>
+            <div class="controls-block">
+                <div id="instruction-text" style="font-size: 0.9rem; color: var(--highlight); margin-bottom: 10px;"></div>
+                <div id="action-buttons"></div>
+            </div>
+            <div id="game-log" class="log-area"></div>
+        </section>
+    </div>
+
+    <div id="modal" class="modal">
+        <div class="modal-content">
+            <h2 id="modal-title"></h2>
+            <p id="modal-text" style="font-size: 1.1rem; line-height: 1.4;"></p>
+            <button class="action-btn" onclick="ui.closeModal()">ПРИНЯТО</button>
+        </div>
+    </div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+
+    const firebaseConfig = {
+        apiKey: "AIzaSyBvy2NpltXHdoRFyLo944tu111oBKHF_bg",
+        authDomain: "bandit-vs-inspector.firebaseapp.com",
+        databaseURL: "https://bandit-vs-inspector-default-rtdb.europe-west1.firebasedatabase.app",
+        projectId: "bandit-vs-inspector",
+        storageBucket: "bandit-vs-inspector.firebasestorage.app",
+        messagingSenderId: "506609326177",
+        appId: "1:506609326177:web:7676ed6988876dcce97220"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+    const gameRef = ref(db, 'killer_game/state');
+
+    const NAMES = ["Анна", "Борис", "Виктор", "Галина", "Дмитрий", "Елена", "Жанна", "Захар", "Иван", "Кира", "Леонид", "Мария", "Николай", "Ольга", "Павел", "Роман", "Светлана", "Тамара", "Ульяна", "Фёдор", "Харитон", "Цветков", "Чайка", "Шурик", "Юрий"];
+
+    class KillerGame {
+        constructor() {
+            this.grid = []; this.deck = []; 
+            this.killerId = null; this.detectiveId = null;
+            this.victimList = []; this.detectiveHand = [];
+            this.activePlayer = 'killer'; this.phase = 'setup_detective';
+            this.gameOver = false; this.logs = []; this.selectedAction = null;
+        }
+
+        async sync() {
+            await set(gameRef, JSON.parse(JSON.stringify(this)));
+        }
+
+        resetGame() {
+            let tempNames = [...NAMES].sort(() => Math.random() - 0.5);
+            this.grid = []; this.deck = [];
+            let idCounter = 0;
+            for (let r = 0; r < 5; r++) {
+                let row = [];
+                for (let c = 0; c < 5; c++) {
+                    row.push({ name: tempNames[idCounter], id: idCounter, dead: false, innocent: false });
+                    this.deck.push(idCounter); idCounter++;
+                }
+                this.grid.push(row);
+            }
+            this.deck.sort(() => Math.random() - 0.5);
+            this.killerId = this.deck.pop();
+            // ИСПРАВЛЕНО: Всего 3 жертвы в начале игры
+            this.victimList = [this.deck.pop(), this.deck.pop(), this.deck.pop()];
+            this.detectiveHand = [this.deck.pop(), this.deck.pop(), this.deck.pop()];
+            this.detectiveId = null;
+            this.activePlayer = 'detective'; 
+            this.phase = 'setup_detective';
+            this.gameOver = false;
+            this.logs = [{text: "Сыщик, выберите себе роль из карт на руке.", type: "system"}];
+            this.sync();
+        }
+
+        findCoords(id) {
+            for(let r=0; r<5; r++) for(let c=0; c<5; c++) if(this.grid[r][c].id === id) return {r, c};
+            return null;
+        }
+
+        getNeighbors(id) {
+            let p = this.findCoords(id);
+            if (!p) return [];
+            let n = [];
+            for (let dr = -1; dr <= 1; dr++) {
+                for (let dc = -1; dc <= 1; dc++) {
+                    if (dr === 0 && dc === 0) continue;
+                    let nr = p.r + dr, nc = p.c + dc;
+                    if (nr >= 0 && nr < 5 && nc >= 0 && nc < 5) n.push(this.grid[nr][nc].id);
+                }
+            }
+            return n;
+        }
+
+        shiftRow(r, dir) {
+            // ИСПРАВЛЕНО: Четкие направления в логах
+            const dirText = dir === 1 ? "вправо" : "влево";
+            if (dir === 1) this.grid[r].unshift(this.grid[r].pop());
+            else this.grid[r].push(this.grid[r].shift());
+            this.log(`Ряд ${r + 1} сдвинут ${dirText}.`, 'shift');
+            this.endAction();
+        }
+
+        shiftCol(c, dir) {
+            // ИСПРАВЛЕНО: Четкие направления в логах
+            const dirText = dir === 1 ? "вниз" : "вверх";
+            let col = [];
+            for(let r=0; r<5; r++) col.push(this.grid[r][c]);
+            if (dir === 1) col.unshift(col.pop());
+            else col.push(col.shift());
+            for(let r=0; r<5; r++) this.grid[r][c] = col[r];
+            this.log(`Столбец ${c + 1} сдвинут ${dirText}.`, 'shift');
+            this.endAction();
+        }
+
+        actionKill(id) {
+            let neighbors = this.getNeighbors(this.killerId);
+            if (!neighbors.includes(id)) return;
+            let cellCoords = this.findCoords(id);
+            let targetCell = this.grid[cellCoords.r][cellCoords.c];
+            targetCell.dead = true;
+            this.log(`УБИЙСТВО: ${targetCell.name}`, "killer");
+            if (this.victimList[0] === id) {
+                this.victimList.shift();
+                if (this.victimList.length === 0) return this.win('killer', "Все цели из списка мертвы!");
+            }
+            if (id === this.detectiveId) {
+                if (this.detectiveHand.length > 0) this.detectiveId = this.detectiveHand.shift();
+                else return this.win('killer', "Сыщик убит окончательно!");
+            }
+            if (this.detectiveHand.includes(id)) this.detectiveHand = this.detectiveHand.filter(cardId => cardId !== id);
+            this.endAction();
+        }
+
+        actionEscape() {
+            if (this.deck.length < 2) return;
+            let newId = this.deck.pop();
+            let checkCell = this.grid[this.findCoords(newId).r][this.findCoords(newId).c];
+            if (!checkCell.dead) {
+                this.killerId = newId;
+                this.victimList.push(this.deck.pop());
+                this.log(`Убийца сбежал. Список жертв вырос.`, "killer");
+            } else this.log(`Побег провален: ${checkCell.name} мертв.`, "killer");
+            this.endAction();
+        }
+
+        actionAccuse(id) {
+            let neighbors = this.getNeighbors(this.detectiveId);
+            if (!neighbors.includes(id) && id !== this.detectiveId) return;
+            if (id === this.killerId) return this.win('detective', "Убийца пойман!");
+            if (this.deck.length > 0) this.victimList.push(this.deck.pop());
+            this.log("Ошибка! Убийца добавил жертву.", "detective");
+            this.endAction();
+        }
+
+        actionExoneratePrep() {
+            if (this.deck.length > 0) this.detectiveHand.push(this.deck.pop());
+            this.phase = 'detective_exonerate_discard';
+            this.sync();
+        }
+
+        actionExonerateFinish(id) {
+            this.detectiveHand = this.detectiveHand.filter(i => i !== id);
+            let c = this.findCoords(id);
+            if (c && !this.grid[c.r][c.c].dead) {
+                this.grid[c.r][c.c].innocent = true;
+                let kPos = this.findCoords(this.killerId);
+                let near = Math.abs(c.r - kPos.r) <= 1 && Math.abs(c.c - kPos.c) <= 1;
+                const msg = `Свидетель ${this.grid[c.r][c.c].name}: Убийца ${near ? 'РЯДОМ' : 'ДАЛЕКО'}.`;
+                this.log(msg, "detective");
+                setTimeout(() => ui.showModal("Допрос", msg), 500);
+            }
+            this.endAction();
+        }
+
+        setupDetective(id) {
+            this.detectiveId = id;
+            this.detectiveHand = this.detectiveHand.filter(i => i !== id);
+            this.phase = 'main'; this.activePlayer = 'killer';
+            this.sync();
+        }
+
+        win(winner, reason) {
+            this.gameOver = true;
+            this.log(`ФИНАЛ: ${reason}`, winner);
+            this.sync();
+        }
+
+        endAction() {
+            this.activePlayer = this.activePlayer === 'killer' ? 'detective' : 'killer';
+            this.selectedAction = null; this.phase = 'main';
+            this.sync();
+        }
+
+        log(m, type) {
+            this.logs.unshift({text: m, type: type});
+            if(this.logs.length > 15) this.logs.pop();
+        }
+    }
+
+    const game = new KillerGame();
+    window.game = game;
+
+    const ui = {
+        localRole: null,
+        setLocalRole(role) {
+            this.localRole = role;
+            document.getElementById('btn-role-killer').classList.toggle('active', role === 'killer');
+            document.getElementById('btn-role-detective').classList.toggle('active', role === 'detective');
+            this.render();
+        },
+        showModal(t, txt) {
+            document.getElementById('modal-title').textContent = t;
+            document.getElementById('modal-text').innerText = txt;
+            document.getElementById('modal').style.display = 'flex';
+        },
+        closeModal() { document.getElementById('modal').style.display = 'none'; },
+
+        render() {
+            const g = window.game;
+            const isMyTurn = (this.localRole === g.activePlayer);
+            
+            const turnEl = document.getElementById('turn-indicator');
+            // ИСПРАВЛЕНО: Добавление надписи (Ожидание...)
+            const turnText = g.activePlayer === 'killer' ? 'УБИЙЦЫ' : 'СЫЩИКА';
+            turnEl.textContent = `ХОД: ${turnText}${!isMyTurn && !g.gameOver ? ' (Ожидание...)' : ''}`;
+            turnEl.style.color = g.activePlayer === 'killer' ? 'var(--accent-red)' : 'var(--accent-blue)';
+
+            const identityEl = document.getElementById('player-identity');
+            let myId = this.localRole === 'killer' ? g.killerId : g.detectiveId;
+            let myCoords = g.findCoords(myId);
+            identityEl.textContent = myCoords ? g.grid[myCoords.r][myCoords.c].name : "?";
+
+            // РЕНДЕР СПИСКА ЖЕРТВ (Скрываем для Сыщика)
+            const vList = document.getElementById('victim-list');
+            vList.innerHTML = '';
+            g.victimList.forEach((id, idx) => {
+                let span = document.createElement('span');
+                span.className = 'victim-tag' + (idx === 0 ? ' victim-active' : '');
+                
+                let c = g.findCoords(id);
+                let name = c ? g.grid[c.r][c.c].name : "???";
+
+                // Если это не первая жертва И смотрит Сыщик — скрываем имя
+                if (idx > 0 && this.localRole === 'detective') {
+                    span.textContent = "???";
+                } else {
+                    span.textContent = name;
+                }
+                vList.appendChild(span);
+            });
+
+            const handUi = document.getElementById('detective-hand-ui');
+            const handContainer = document.getElementById('hand-cards');
+            if (this.localRole === 'detective') {
+                handUi.style.display = 'block';
+                handContainer.innerHTML = '';
+                g.detectiveHand.forEach(id => {
+                    let c = g.findCoords(id);
+                    let div = document.createElement('div'); div.className = 'hand-card';
+                    div.textContent = c ? g.grid[c.r][c.c].name : "???";
+                    if (isMyTurn) div.onclick = () => {
+                        if (g.phase === 'setup_detective') g.setupDetective(id);
+                        if (g.phase === 'detective_exonerate_discard') g.actionExonerateFinish(id);
+                    };
+                    handContainer.appendChild(div);
+                });
+            } else { handUi.style.display = 'none'; }
+
+            const boardEl = document.getElementById('board');
+            boardEl.innerHTML = '';
+            for (let r = 0; r < 5; r++) {
+                for (let c = 0; c < 5; c++) {
+                    let cell = g.grid[r][c];
+                    let div = document.createElement('div');
+                    div.className = 'card' + (cell.dead ? ' status-dead' : '') + (cell.innocent ? ' status-innocent' : '');
+                    div.textContent = cell.name;
+                    if (isMyTurn && !cell.dead && this.isTargetMode(r, c)) {
+                        div.classList.add('target-valid');
+                        div.onclick = () => {
+                            if (g.selectedAction === 'kill') g.actionKill(cell.id);
+                            if (g.selectedAction === 'accuse') g.actionAccuse(cell.id);
+                        };
+                    }
+                    boardEl.appendChild(div);
+                }
+            }
+
+            const actionBtns = document.getElementById('action-buttons');
+            actionBtns.innerHTML = '';
+            const instructions = document.getElementById('instruction-text');
+            if (!g.gameOver && isMyTurn) {
+                if (g.phase === 'setup_detective') instructions.textContent = "Выберите свою тайную личность.";
+                else if (g.phase === 'detective_exonerate_discard') instructions.textContent = "Оправдайте человека.";
+                else {
+                    instructions.textContent = "Ваш ход:";
+                    if (g.activePlayer === 'killer') {
+                        this.createBtn(actionBtns, 'УБИТЬ СОСЕДА', 'kill', () => { g.selectedAction = 'kill'; this.render(); });
+                        this.createBtn(actionBtns, 'СБЕЖАТЬ (МАСКИРОВКА)', '', () => g.actionEscape());
+                    } else {
+                        this.createBtn(actionBtns, 'ОБЛИЧИТЬ (РЯДОМ)', 'kill', () => { g.selectedAction = 'accuse'; this.render(); });
+                        this.createBtn(actionBtns, 'ОПРАВДАТЬ', '', () => g.actionExoneratePrep());
+                    }
+                }
+            }
+            document.getElementById('game-log').innerHTML = g.logs.map(l => `<div style="color:${this.getLogColor(l.type)}">> ${l.text}</div>`).join('');
+        },
+
+        isTargetMode(r, c) {
+            const g = window.game;
+            if (!g.selectedAction) return false;
+            let myId = g.activePlayer === 'killer' ? g.killerId : g.detectiveId;
+            let n = g.getNeighbors(myId);
+            if (g.selectedAction === 'accuse') n.push(g.detectiveId);
+            return n.includes(g.grid[r][c].id);
+        },
+
+        createBtn(parent, txt, cls, fn) {
+            let b = document.createElement('button'); b.className = 'action-btn ' + cls;
+            b.textContent = txt; b.onclick = fn; parent.appendChild(b);
+        },
+
+        getLogColor(type) {
+            if (type === 'killer') return 'var(--accent-red)';
+            if (type === 'detective') return 'var(--accent-blue)';
+            if (type === 'shift') return 'var(--accent-green)';
+            return '#888';
+        }
+    };
+    window.ui = ui;
+
+    onValue(gameRef, (snapshot) => {
+        const data = snapshot.val();
+        if (data) { Object.assign(game, data); ui.render(); }
+        else game.resetGame();
+    });
+</script>
+</body>
+</html>
